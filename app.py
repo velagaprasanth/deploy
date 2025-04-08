@@ -3,11 +3,14 @@ import firebase_admin
 import base64
 import json
 from firebase_admin import credentials, firestore
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_from_directory
 from PIL import Image
 from io import BytesIO
 from datetime import datetime
 import logging
+from werkzeug.utils import secure_filename
+import uuid
+from google.cloud import storage
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -15,6 +18,15 @@ logger = logging.getLogger(__name__)
 
 # Initialize Flask app
 app = Flask(__name__)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(24))
+app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+
+# Ensure upload directory exists
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+# Allowed file extensions
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 
 # Constants
 IMAGES_PER_PAGE = 9  # Number of images to load per page
@@ -65,99 +77,129 @@ def optimize_image(image):
         image.thumbnail(MAX_IMAGE_SIZE, Image.Resampling.LANCZOS)
     return image
 
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 @app.route('/')
 def index():
-    page = request.args.get('page', 1, type=int)
-    
-    # Check if we're in demo mode
-    if app.config.get('DEMO_MODE', False):
-        return render_template('index.html', images=[], demo_mode=True)
-    
-    # Fetch images from Firestore with pagination
-    images = []
     try:
-        # Get total count of images
-        total_docs = db.collection('cleaning_photos').get()
-        total_images = len(list(total_docs))
-        total_pages = (total_images + IMAGES_PER_PAGE - 1) // IMAGES_PER_PAGE
-
-        # Get paginated images
-        query = db.collection('cleaning_photos').order_by('timestamp', direction=firestore.Query.DESCENDING)
-        docs = query.limit(IMAGES_PER_PAGE).offset((page - 1) * IMAGES_PER_PAGE).stream()
-        
-        for doc in docs:
-            image_data = doc.to_dict()
-            images.append({
-                'id': doc.id,
-                'image': image_data['image'],
-                'filename': image_data.get('filename', ''),
-                'location': image_data.get('location', ''),
-                'timestamp': image_data.get('timestamp', ''),
-                'date': image_data.get('date', '')
-            })
+        if app.config['DEMO_MODE']:
+            # Get list of uploaded images from local storage
+            images = []
+            for filename in os.listdir(app.config['UPLOAD_FOLDER']):
+                if filename.endswith(tuple(ALLOWED_EXTENSIONS)):
+                    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                    stat = os.stat(file_path)
+                    images.append({
+                        'id': filename.split('.')[0],
+                        'filename': filename,
+                        'upload_date': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                    })
+            
+            # Sort images by upload date (newest first)
+            images.sort(key=lambda x: x['upload_date'], reverse=True)
+            return render_template('index.html', images=images)
+        else:
+            # Get images from Firebase
+            images_ref = db.collection('images')
+            images = []
+            for doc in images_ref.stream():
+                image_data = doc.to_dict()
+                images.append({
+                    'id': doc.id,
+                    'filename': image_data.get('filename', ''),
+                    'upload_date': image_data.get('upload_date', '')
+                })
+            return render_template('index.html', images=images)
     except Exception as e:
-        logger.error(f"Error fetching images: {e}")
-        return render_template('index.html', images=[], error=str(e))
-    
-    return render_template('index.html', 
-                         images=images, 
-                         current_page=page,
-                         total_pages=total_pages)
+        logger.error(f"Error in index route: {e}")
+        flash('Error loading images')
+        return render_template('index.html', images=[])
 
 @app.route('/upload', methods=['POST'])
-def upload():
-    if app.config.get('DEMO_MODE', False):
-        return jsonify({"message": "Demo mode: Image would be uploaded in production mode", "status": "demo"}), 200
-    
-    if 'photo' not in request.files:
-        return jsonify({"error": "No file part"}), 400
-    
-    photo = request.files['photo']
-    location = request.form.get('location', 'Unknown Location')
-    
-    if photo.filename == '':
-        return jsonify({"error": "No selected file"}), 400
-
+def upload_file():
     try:
-        # Get current timestamp
-        now = datetime.now()
-        timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
-        date = now.strftime("%B %d, %Y")
-
-        # Optimize image
-        image = Image.open(photo)
-        optimized_image = optimize_image(image)
+        if 'image' not in request.files:
+            flash('No file part')
+            return redirect(request.url)
         
-        # Convert to base64
-        buffered = BytesIO()
-        optimized_image.save(buffered, format="JPEG", quality=JPEG_QUALITY, optimize=True)
-        img_str = base64.b64encode(buffered.getvalue()).decode()
-
-        # Store in Firestore
-        doc_ref = db.collection('cleaning_photos').add({
-            "image": img_str,
-            "filename": photo.filename,
-            "location": location,
-            "timestamp": timestamp,
-            "date": date
-        })
-
-        return jsonify({"message": "Image uploaded successfully!", "timestamp": timestamp}), 200
+        file = request.files['image']
+        if file.filename == '':
+            flash('No selected file')
+            return redirect(request.url)
+        
+        if file and allowed_file(file.filename):
+            # Generate unique filename
+            unique_id = str(uuid.uuid4())
+            filename = secure_filename(file.filename)
+            extension = filename.rsplit('.', 1)[1].lower()
+            new_filename = f"{unique_id}.{extension}"
+            
+            if app.config['DEMO_MODE']:
+                # Save file locally
+                file.save(os.path.join(app.config['UPLOAD_FOLDER'], new_filename))
+            else:
+                # Save file to Firebase Storage
+                bucket = storage.bucket()
+                blob = bucket.blob(f"images/{new_filename}")
+                blob.upload_from_string(
+                    file.read(),
+                    content_type=file.content_type
+                )
+                
+                # Save metadata to Firestore
+                db.collection('images').add({
+                    'filename': new_filename,
+                    'upload_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                })
+            
+            flash('Image uploaded successfully')
+            return redirect(url_for('index'))
+        
+        flash('Invalid file type')
+        return redirect(request.url)
     except Exception as e:
-        logger.error(f"Error uploading image: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Error in upload route: {e}")
+        flash('Error uploading image')
+        return redirect(request.url)
 
-@app.route('/delete/<image_id>', methods=['DELETE'])
+@app.route('/delete/<image_id>', methods=['POST'])
 def delete_image(image_id):
-    if app.config.get('DEMO_MODE', False):
-        return jsonify({"message": "Demo mode: Image would be deleted in production mode"}), 200
-    
     try:
-        db.collection('cleaning_photos').document(image_id).delete()
-        return '', 204  # No content response for successful deletion
+        if app.config['DEMO_MODE']:
+            # Delete from local storage
+            for filename in os.listdir(app.config['UPLOAD_FOLDER']):
+                if filename.startswith(image_id):
+                    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                    os.remove(file_path)
+                    flash('Image deleted successfully')
+                    return redirect(url_for('index'))
+        else:
+            # Delete from Firebase
+            db.collection('images').document(image_id).delete()
+            flash('Image deleted successfully')
+            return redirect(url_for('index'))
+        
+        flash('Image not found')
+        return redirect(url_for('index'))
     except Exception as e:
-        logger.error(f"Error deleting image: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Error in delete route: {e}")
+        flash('Error deleting image')
+        return redirect(url_for('index'))
+
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    try:
+        if app.config['DEMO_MODE']:
+            return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+        else:
+            bucket = storage.bucket()
+            blob = bucket.blob(f"images/{filename}")
+            return redirect(blob.public_url)
+    except Exception as e:
+        logger.error(f"Error serving file: {e}")
+        return "File not found", 404
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)

@@ -2,10 +2,16 @@ services:
   - type: web
     name: house-cleaning-app
     env: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: |
+      pip install -r requirements.txt
+      mkdir -p uploads
     startCommand: gunicorn app:app
     envVars:
       - key: PYTHON_VERSION
         value: 3.9.0
+      - key: SECRET_KEY
+        generateValue: true
       - key: GOOGLE_APPLICATION_CREDENTIALS
-        sync: false 
+        sync: false
+    healthCheckPath: /
+    autoDeploy: true 

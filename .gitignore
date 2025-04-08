@@ -1,21 +1,42 @@
-# Firebase credentials
-your-service-account.json
-
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
-.env
-.venv
+.Python
 env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
 venv/
+ENV/
 
 # IDE
-.vscode/
 .idea/
+.vscode/
 *.swp
 *.swo
+
+# Application specific
+uploads/
+*.log
+your-service-account.json
+
+# Environment variables
+.env
 
 # OS specific
 .DS_Store

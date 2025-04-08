@@ -1,4 +1,9 @@
 bind = "0.0.0.0:10000"
-workers = 2
+workers = 4
 threads = 4
-timeout = 120 
+timeout = 120
+keepalive = 5
+worker_class = "gthread"
+accesslog = "-"
+errorlog = "-"
+loglevel = "info" 

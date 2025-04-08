@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>House Cleaning Photo Logger</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Poppins', sans-serif;
+        }
+
+        body {
+            background-color: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            background: linear-gradient(135deg, #2193b0, #6dd5ed);
+            color: white;
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        header h1 {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .camera-container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 2rem;
+        }
+
+        #video {
+            width: 100%;
+            max-width: 640px;
+            border-radius: 10px;
+            margin: 0 auto;
+            display: block;
+        }
+
+        .camera-controls {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 1rem;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        #startCamera {
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        #capture {
+            background-color: #2196F3;
+            color: white;
+            display: none;
+        }
+
+        .upload-btn {
+            background-color: #9C27B0;
+            color: white;
+        }
+
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 2rem;
+            padding: 20px;
+        }
+
+        .image-card {
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+            opacity: 0;
+            animation: fadeIn 0.5s ease forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .image-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .image-card img {
+            width: 100%;
+            height: 250px;
+            object-fit: cover;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .image-card img.loaded {
+            opacity: 1;
+        }
+
+        .image-info {
+            padding: 1rem;
+        }
+
+        .image-info h3 {
+            font-size: 1.1rem;
+            color: #333;
+            margin-bottom: 0.5rem;
+        }
+
+        .image-meta {
+            font-size: 0.9rem;
+            color: #666;
+            margin-bottom: 0.5rem;
+        }
+
+        .image-meta i {
+            margin-right: 5px;
+            width: 16px;
+        }
+
+        .delete-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: rgba(255, 0, 0, 0.8);
+            color: white;
+            border: none;
+            padding: 8px;
+            border-radius: 50%;
+            cursor: pointer;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .image-card:hover .delete-btn {
+            opacity: 1;
+        }
+
+        .delete-btn:hover {
+            background-color: rgba(255, 0, 0, 1);
+        }
+
+        .location-input {
+            width: 100%;
+            padding: 10px;
+            margin-top: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1rem;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .pagination button {
+            background-color: #2196F3;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .pagination button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        .loading-spinner {
+            display: none;
+            justify-content: center;
+            margin: 2rem 0;
+        }
+
+        .loading-spinner.visible {
+            display: flex;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+
+            header h1 {
+                font-size: 2rem;
+            }
+
+            .image-grid {
+                grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+                gap: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1><i class="fas fa-camera"></i> House Cleaning Photo Logger</h1>
+        </div>
+    </header>
+
+    <div class="container">
+        {% if demo_mode %}
+        <div class="alert" style="background-color: #fff3cd; color: #856404; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+            <strong><i class="fas fa-exclamation-triangle"></i> Demo Mode:</strong> 
+            Firebase credentials not found. The app is running in demo mode. 
+            To enable full functionality, please add your Firebase service account JSON file.
+            <p>See the README.md for setup instructions.</p>
+        </div>
+        {% endif %}
+
+        {% if error %}
+        <div class="alert" style="background-color: #f8d7da; color: #721c24; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+            <strong><i class="fas fa-exclamation-circle"></i> Error:</strong> 
+            {{ error }}
+        </div>
+        {% endif %}
+
+        <div class="camera-container">
+            <video id="video" autoplay></video>
+            <div class="camera-controls">
+                <button id="startCamera"><i class="fas fa-video"></i> Start Camera</button>
+                <button id="capture"><i class="fas fa-camera"></i> Capture Photo</button>
+            </div>
+            <canvas id="canvas" style="display: none;"></canvas>
+            <form id="uploadForm" style="display: none;">
+                <input type="text" id="locationInput" class="location-input" placeholder="Enter location (e.g., Living Room, Kitchen)" required>
+                <div class="camera-controls">
+                    <button type="submit" class="upload-btn"><i class="fas fa-upload"></i> Upload Photo</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="loading-spinner" id="loadingSpinner">
+            <i class="fas fa-spinner fa-spin fa-2x"></i>
+        </div>
+
+        <div class="image-grid">
+            {% if images %}
+                {% for image in images %}
+                    <div class="image-card">
+                        <div style="position: relative;">
+                            <img data-src="data:image/jpeg;base64,{{ image.image }}" alt="{{ image.filename }}" loading="lazy">
+                            <button class="delete-btn" onclick="deleteImage('{{ image.id }}')">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                        <div class="image-info">
+                            <h3>{{ image.location }}</h3>
+                            <div class="image-meta">
+                                <p><i class="far fa-calendar"></i> {{ image.date }}</p>
+                                <p><i class="far fa-clock"></i> {{ image.timestamp.split(' ')[1] }}</p>
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <p>No images uploaded yet. Start by capturing your first photo!</p>
+            {% endif %}
+        </div>
+
+        {% if total_pages > 1 %}
+        <div class="pagination">
+            <button onclick="changePage({{ current_page - 1 }})" {% if current_page == 1 %}disabled{% endif %}>
+                <i class="fas fa-chevron-left"></i> Previous
+            </button>
+            <span>Page {{ current_page }} of {{ total_pages }}</span>
+            <button onclick="changePage({{ current_page + 1 }})" {% if current_page == total_pages %}disabled{% endif %}>
+                Next <i class="fas fa-chevron-right"></i>
+            </button>
+        </div>
+        {% endif %}
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const startButton = document.getElementById('startCamera');
+        const captureButton = document.getElementById('capture');
+        const uploadForm = document.getElementById('uploadForm');
+        const locationInput = document.getElementById('locationInput');
+        let stream = null;
+
+        // Lazy loading for images
+        document.addEventListener('DOMContentLoaded', function() {
+            const images = document.querySelectorAll('img[data-src]');
+            const imageObserver = new IntersectionObserver((entries, observer) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const img = entry.target;
+                        img.src = img.dataset.src;
+                        img.onload = () => img.classList.add('loaded');
+                        observer.unobserve(img);
+                    }
+                });
+            });
+
+            images.forEach(img => imageObserver.observe(img));
+        });
+
+        startButton.addEventListener('click', async () => {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                startButton.style.display = 'none';
+                captureButton.style.display = 'inline-block';
+            } catch (err) {
+                console.error('Error accessing camera:', err);
+                alert('Error accessing camera. Please make sure you have granted camera permissions.');
+            }
+        });
+
+        captureButton.addEventListener('click', () => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+            uploadForm.style.display = 'block';
+        });
+
+        uploadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const location = locationInput.value;
+            const loadingSpinner = document.getElementById('loadingSpinner');
+            
+            canvas.toBlob(async (blob) => {
+                const formData = new FormData();
+                formData.append('photo', blob, 'captured_photo.jpg');
+                formData.append('location', location);
+
+                try {
+                    loadingSpinner.classList.add('visible');
+                    const response = await fetch('/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (response.ok) {
+                        window.location.reload();
+                    } else {
+                        alert('Error uploading image');
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('Error uploading image');
+                } finally {
+                    loadingSpinner.classList.remove('visible');
+                }
+            }, 'image/jpeg', 0.85);
+        });
+
+        async function deleteImage(imageId) {
+            if (confirm('Are you sure you want to delete this image?')) {
+                try {
+                    const response = await fetch(`/delete/${imageId}`, {
+                        method: 'DELETE'
+                    });
+                    if (response.ok) {
+                        window.location.reload();
+                    } else {
+                        alert('Error deleting image');
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('Error deleting image');
+                }
+            }
+        }
+
+        function changePage(page) {
+            const loadingSpinner = document.getElementById('loadingSpinner');
+            loadingSpinner.classList.add('visible');
+            window.location.href = `/?page=${page}`;
+        }
+    </script>
+</body>
+</html>

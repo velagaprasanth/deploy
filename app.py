@@ -21,30 +21,41 @@ IMAGES_PER_PAGE = 9  # Number of images to load per page
 MAX_IMAGE_SIZE = (800, 800)  # Maximum image dimensions
 JPEG_QUALITY = 85  # JPEG quality for compression
 
-# Load Firebase credentials
-try:
-    if os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'):
-        # Production: Use environment variable
-        cred_dict = json.loads(os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'))
-        cred = credentials.Certificate(cred_dict)
-        logger.info("Using Firebase credentials from environment variable")
-    else:
-        # Development: Use local file
-        service_account_path = "your-service-account.json"
-        if not os.path.exists(service_account_path):
-            logger.warning(f"Service account file not found at {service_account_path}")
-            logger.warning("Please create a service account file or use the example-service-account.json as a template")
-            app.config['DEMO_MODE'] = True
-            db = None
-        else:
-            cred = credentials.Certificate(service_account_path)
+# Initialize Firebase
+app.config['DEMO_MODE'] = False
+db = None
+
+def initialize_firebase():
+    global db
+    try:
+        if os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'):
+            # Production: Use environment variable
+            cred_dict = json.loads(os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'))
+            cred = credentials.Certificate(cred_dict)
             firebase_admin.initialize_app(cred)
             db = firestore.client()
-            logger.info("Using Firebase credentials from local file")
-except Exception as e:
-    logger.error(f"Error initializing Firebase: {e}")
-    app.config['DEMO_MODE'] = True
-    db = None
+            logger.info("Firebase initialized successfully from environment variable")
+            return True
+        else:
+            # Development: Use local file
+            service_account_path = "your-service-account.json"
+            if os.path.exists(service_account_path):
+                cred = credentials.Certificate(service_account_path)
+                firebase_admin.initialize_app(cred)
+                db = firestore.client()
+                logger.info("Firebase initialized successfully from local file")
+                return True
+            else:
+                logger.warning("Service account file not found. Running in demo mode.")
+                app.config['DEMO_MODE'] = True
+                return False
+    except Exception as e:
+        logger.error(f"Error initializing Firebase: {e}")
+        app.config['DEMO_MODE'] = True
+        return False
+
+# Initialize Firebase on startup
+initialize_firebase()
 
 def optimize_image(image):
     """Optimize image size and quality."""

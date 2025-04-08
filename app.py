@@ -35,7 +35,7 @@ JPEG_QUALITY = 85  # JPEG quality for compression
 
 # Initialize Firebase
 app.config['DEMO_MODE'] = False
-db = None
+db = firestore.client()
 
 def initialize_firebase():
     global db
